@@ -1,113 +1,265 @@
-import Image from "next/image";
+"use client";
+
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useForm } from "react-hook-form";
+import { z } from "zod";
+import { ArrowLeft, Languages, Sparkles } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import { useState } from "react";
+import { readStreamableValue } from "ai/rsc";
+import { generate } from "./action";
+import ReactMarkdown from "react-markdown";
+import { useRouter } from "next/navigation";
+
+// Force the page to be dynamic and allow streaming responses up to 30 seconds
+export const dynamic = "force-dynamic";
+export const maxDuration = 30;
+
+const FormSchema = z.object({
+  vocab: z.string().min(2, {
+    message: "Vocabulary must be at least 2 characters.",
+  }),
+  instruction: z.string().min(10, {
+    message: "Instruction must be at least 10 characters.",
+  }),
+  language: z.string().min(2, {
+    message: "Language must be at least 2 characters.",
+  }),
+});
 
 export default function Home() {
+  const router = useRouter();
+
+  const [generation, setGeneration] = useState<string>("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const form = useForm<z.infer<typeof FormSchema>>({
+    resolver: zodResolver(FormSchema),
+    defaultValues: {
+      vocab: "sleep, eat",
+      instruction:
+        "Create one short reading passage with two paragraphs for primary 1 students",
+      language: "english",
+    },
+  });
+
+  async function onSubmit(data: z.infer<typeof FormSchema>) {
+    setIsSubmitting(true);
+    const { output } = await generate(data);
+
+    for await (const delta of readStreamableValue(output)) {
+      setGeneration((currentGeneration) => `${currentGeneration}${delta}`);
+    }
+    setIsSubmitting(false);
+  }
+
+  function save() {
+    console.log(generation);
+    let result = generation
+      .split("**Passage:**")
+      .pop()
+      ?.replace("**Vocabulary words:**", "**Vocabulary Words:**");
+    let passage = result?.split("**Vocabulary Words:**")[0];
+    let definitions = result
+      ?.split("**Vocabulary Words:**")[1]
+      ?.split("Note:")[0];
+
+    const params = {
+      userId: 1,
+      passage,
+      definitions,
+    };
+    console.log(params);
+  }
+
   return (
-    <main className="flex min-h-screen flex-col items-center justify-between p-24">
-      <div className="z-10 w-full max-w-5xl items-center justify-between font-mono text-sm lg:flex">
-        <p className="fixed left-0 top-0 flex w-full justify-center border-b border-gray-300 bg-gradient-to-b from-zinc-200 pb-6 pt-8 backdrop-blur-2xl dark:border-neutral-800 dark:bg-zinc-800/30 dark:from-inherit lg:static lg:w-auto  lg:rounded-xl lg:border lg:bg-gray-200 lg:p-4 lg:dark:bg-zinc-800/30">
-          Get started by editing&nbsp;
-          <code className="font-mono font-bold">app/page.tsx</code>
-        </p>
-        <div className="fixed bottom-0 left-0 flex h-48 w-full items-end justify-center bg-gradient-to-t from-white via-white dark:from-black dark:via-black lg:static lg:size-auto lg:bg-none">
-          <a
-            className="pointer-events-none flex place-items-center gap-2 p-8 lg:pointer-events-auto lg:p-0"
-            href="https://vercel.com?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            By{" "}
-            <Image
-              src="/vercel.svg"
-              alt="Vercel Logo"
-              className="dark:invert"
-              width={100}
-              height={24}
-              priority
-            />
-          </a>
+    <div className="w-screen h-screen flex flex-col justify-center items-center gap-y-6">
+      {generation.includes("**Passage:**") ? ( //  generation.includes("**Passage:**")
+        <div className="w-full h-full flex flex-col justify-start items-center pt-8 gap-y-6">
+          <div className="w-full mb-12 flex justify-center items-center border-[0.5px] border-gray-200 bg-gray-100">
+            <div className="md:w-2/3 w-full flex justify-between py-2 ">
+              <Button
+                className="bg-gray-200 text-black hover:bg-gray-300 p-3 gap-x-1"
+                onClick={() => {
+                  setGeneration("");
+                  router.refresh();
+                }}
+              >
+                <ArrowLeft size={16} />
+                Back
+              </Button>
+              <Button
+                className="bg-lime-400 text-black hover:bg-lime-300 p-3"
+                onClick={save}
+                disabled={isSubmitting ? true : false}
+              >
+                Save
+              </Button>
+            </div>
+          </div>
+          <div className="md:w-2/3 w-full text-sm border-[1px] border-gray-200 rounded-xl">
+            <div className="bg-gray-100 text-black rounded-t-xl px-3 py-2">
+              <p>Passage</p>
+            </div>
+            <div className="px-3 py-5">
+              <ReactMarkdown>
+                {
+                  generation
+                    .split("**Passage:**")
+                    .pop()
+                    ?.replace("**Vocabulary words:**", "**Vocabulary Words:**")
+                    ?.split("**Vocabulary Words:**")[0]
+                }
+              </ReactMarkdown>
+            </div>
+          </div>
+
+          <div className="md:w-2/3 w-full text-sm border-[1px] border-gray-200 rounded-xl">
+            <div className="bg-gray-100 text-black rounded-t-xl px-3 py-2">
+              <p>Vocabulary Words</p>
+            </div>
+            <div className="px-3 py-5">
+              <ReactMarkdown>
+                {
+                  generation
+                    .split("**Passage:**")
+                    .pop()
+                    ?.replace("**Vocabulary words:**", "**Vocabulary Words:**")
+                    ?.split("**Vocabulary Words:**")[1]
+                    ?.split("Note:")[0]
+                }
+              </ReactMarkdown>
+            </div>
+          </div>
         </div>
-      </div>
+      ) : (
+        <>
+          <div className="flex w-full flex-col text-center justify-center items-center gap-y-3 mb-5">
+            <h1 className="text-2xl font-semibold">
+              Create a vocabulary based reading
+            </h1>
+            <h3 className="text-gray-500 font-base text-lg">
+              Create a reading passage based on vocabulary words
+            </h3>
+          </div>
+          <div className="w-full flex justify-center items-center">
+            <Form {...form}>
+              <form
+                onSubmit={form.handleSubmit(onSubmit)}
+                className="w-2/3 space-y-6"
+              >
+                <FormField
+                  control={form.control}
+                  name="vocab"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Vocabulary words</FormLabel>
+                      <FormControl>
+                        <Input placeholder="talk, walk" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="instruction"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Additional instructions (optional)</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          {...field}
+                          placeholder="Create one short reading passage with two paragraphs for primary 1 students"
+                        />
+                      </FormControl>
 
-      <div className="relative z-[-1] flex place-items-center before:absolute before:h-[300px] before:w-full before:-translate-x-1/2 before:rounded-full before:bg-gradient-radial before:from-white before:to-transparent before:blur-2xl before:content-[''] after:absolute after:-z-20 after:h-[180px] after:w-full after:translate-x-1/3 after:bg-gradient-conic after:from-sky-200 after:via-blue-200 after:blur-2xl after:content-[''] before:dark:bg-gradient-to-br before:dark:from-transparent before:dark:to-blue-700 before:dark:opacity-10 after:dark:from-sky-900 after:dark:via-[#0141ff] after:dark:opacity-40 sm:before:w-[480px] sm:after:w-[240px] before:lg:h-[360px]">
-        <Image
-          className="relative dark:drop-shadow-[0_0_0.3rem_#ffffff70] dark:invert"
-          src="/next.svg"
-          alt="Next.js Logo"
-          width={180}
-          height={37}
-          priority
-        />
-      </div>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
-      <div className="mb-32 grid text-center lg:mb-0 lg:w-full lg:max-w-5xl lg:grid-cols-4 lg:text-left">
-        <a
-          href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className="mb-3 text-2xl font-semibold">
-            Docs{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className="m-0 max-w-[30ch] text-sm opacity-50">
-            Find in-depth information about Next.js features and API.
-          </p>
-        </a>
+                <FormField
+                  control={form.control}
+                  name="language"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Output language</FormLabel>
+                      <FormControl>
+                        <Select
+                          onValueChange={field.onChange}
+                          defaultValue={field.value}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="English" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectGroup>
+                              <SelectItem value="english">English</SelectItem>
+                              <SelectItem value="vietnamese">
+                                Vietnamese
+                              </SelectItem>
+                            </SelectGroup>
+                          </SelectContent>
+                        </Select>
+                      </FormControl>
 
-        <a
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className="mb-3 text-2xl font-semibold">
-            Learn{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className="m-0 max-w-[30ch] text-sm opacity-50">
-            Learn about Next.js in an interactive course with&nbsp;quizzes!
-          </p>
-        </a>
-
-        <a
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className="mb-3 text-2xl font-semibold">
-            Templates{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className="m-0 max-w-[30ch] text-sm opacity-50">
-            Explore starter templates for Next.js.
-          </p>
-        </a>
-
-        <a
-          href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className="mb-3 text-2xl font-semibold">
-            Deploy{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className="m-0 max-w-[30ch] text-balance text-sm opacity-50">
-            Instantly deploy your Next.js site to a shareable URL with Vercel.
-          </p>
-        </a>
-      </div>
-    </main>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <Button
+                  type="submit"
+                  className="bg-lime-400 hover:bg-lime-200 w-full text-black gap-x-2"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="18"
+                        height="18"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        className="animate-spin"
+                      >
+                        <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+                      </svg>
+                      Generating...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles size={15} />
+                      Generate Reading Passage
+                    </>
+                  )}
+                </Button>
+              </form>
+            </Form>
+          </div>
+        </>
+      )}
+    </div>
   );
 }
